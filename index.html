@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AM Properties</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="AM Properties">
+<meta name="application-name" content="AM Properties">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17201D" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root{--bg:#FFFFFF;--ink:#14231F;--soft:#6B726C;--line:#E7E2D6;--brand:#0F4C43}
+  @media (prefers-color-scheme:dark){:root{--bg:#17201D;--ink:#EEF1EC;--soft:#9AA39D;--line:#25302C;--brand:#5CC2AE}}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:0;display:block;background:transparent;opacity:0;transition:opacity .35s}
+  iframe.on{opacity:1}
+  .splash,.setup{position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center}
+  .splash img,.setup img{width:84px;height:84px;border-radius:20px;box-shadow:0 12px 30px rgba(15,76,67,.28)}
+  .splash b,.setup h1{display:block;font-family:'Times New Roman',Times,'Liberation Serif',serif;font-size:26px;margin:14px 0 0;font-weight:700;letter-spacing:-.3px}
+  .spin{width:24px;height:24px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:s 1s linear infinite;margin:18px auto 0}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .setup{display:none}.setup.on{display:grid}.splash.off{display:none}
+  .setup p{color:var(--soft);max-width:330px;margin:8px auto 18px}
+  .setup input{width:100%;max-width:360px;box-sizing:border-box;font:inherit;font-size:16px;padding:13px 14px;border-radius:14px;border:1px solid var(--line);background:transparent;color:var(--ink)}
+  .setup button{width:100%;max-width:360px;margin-top:12px;border:0;border-radius:14px;padding:14px;font:inherit;font-weight:700;font-size:16px;background:var(--brand);color:#fff}
+  .setup .err{color:#B5412E;font-size:13px;min-height:18px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="splash" id="splash"><div><img src="apple-touch-icon.png" alt=""><b>AM Properties</b><div class="spin"></div></div></div>
+<div class="setup" id="setup"><div>
+  <img src="apple-touch-icon.png" alt="">
+  <h1>Configura tu app</h1>
+  <p>Pega una sola vez el enlace de tu aplicación web de Google (termina en <b>/exec</b>).</p>
+  <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+  <button id="save">Guardar y abrir</button>
+  <div class="err" id="err"></div>
+</div></div>
+<script>
+(function(){
+  var KEY='am_app_url', RE=/^https:\/\/script\.google\.com\/(a\/macros\/[^\/]+|macros)\/s\/[\w-]+\/exec$/;
+  function get(){try{return localStorage.getItem(KEY)||'';}catch(e){return '';}}
+  function set(v){try{localStorage.setItem(KEY,v);}catch(e){}}
+  function open(u){
+    var f=document.createElement('iframe');
+    f.src=u; f.setAttribute('allow','clipboard-write');
+    f.onload=function(){f.classList.add('on');setTimeout(function(){document.getElementById('splash').classList.add('off');},400);};
+    document.body.appendChild(f);
+  }
+  function setup(){document.getElementById('splash').classList.add('off');document.getElementById('setup').classList.add('on');}
+  document.getElementById('save').onclick=function(){
+    var v=document.getElementById('url').value.trim().replace(/\?.*$/,'');
+    if(!RE.test(v)){document.getElementById('err').textContent='Ese enlace no parece correcto. Debe empezar por https://script.google.com y terminar en /exec';return;}
+    set(v);document.getElementById('setup').classList.remove('on');document.getElementById('splash').classList.remove('off');open(v);
+  };
+  if(/[?&]reset=1/.test(location.search)){try{localStorage.removeItem(KEY);}catch(e){}}
+  var u=get(); if(u&&RE.test(u)) open(u); else setup();
+})();
+</script>
+</body>
+</html>
