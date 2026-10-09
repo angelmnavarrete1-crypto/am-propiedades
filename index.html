@@ -64,5 +64,87 @@
   var u=get(); if(u&&RE.test(u)) open(u); else setup();
 })();
 </script>
+<style>
+:root{--fidbg:#0F4C43;--fidfg:#fff;--fidcard:#FFFFFF;--fidink:#14231F;--fidmut:#6B726C;--fidmsg:#14231F}@media (prefers-color-scheme:dark){:root{--fidbg:#5CC2AE;--fidfg:#0B1512;--fidcard:#1F2A26;--fidink:#EEF1EC;--fidmut:#9AA39D;--fidmsg:#EEF1EC}}
+#fid{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);display:none;justify-content:center;z-index:20;padding:0 16px;pointer-events:none}
+#fid.on{display:flex}
+#fid .box{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:8px;max-width:360px;width:100%}
+#fid button{border:0;border-radius:999px;padding:13px 22px;font:600 15px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;display:flex;align-items:center;gap:10px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+#fid .pri{background:var(--fidbg);color:var(--fidfg)}
+#fid .sec{background:transparent;color:var(--fidmut);box-shadow:none;padding:6px 12px;font-weight:500;font-size:13px}
+#fid .card{background:var(--fidcard);color:var(--fidink);border-radius:20px;padding:16px;box-shadow:0 14px 40px rgba(0,0,0,.25);width:100%;box-sizing:border-box;text-align:center;font:14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+#fid .card b{display:block;font-size:16px;margin-bottom:4px}
+#fid .row{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+#fid svg{width:22px;height:22px}
+#fid .msg{font:13px -apple-system,sans-serif;color:var(--fidmsg);background:var(--fidcard);padding:6px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.15)}
+</style>
+<div id="fid"><div class="box" id="fidbox"></div></div>
+<script>
+(function(){
+  var T={"unlock": "Desbloquear con Face ID", "askTitle": "¿Usar Face ID?", "askText": "La próxima vez abres la app con Face ID en lugar del PIN.", "yes": "Activar Face ID", "no": "Ahora no", "on": "Face ID activado ✓", "cancel": "Face ID cancelado", "noSupport": "Face ID no disponible aquí (hace falta iOS 18 y Llavero de iCloud)", "reset": "PIN cambiado: introdúcelo una vez y vuelve a activar Face ID"}, APP="AM Properties", K='am_app_url_fid', NO='am_app_url_fid_no';
+  var FACE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9v4.5h-1M9.5 16c1.5 1 3.5 1 5 0"/></svg>';
+  var inner=null, origin=null, pending=null, tried=false, busy=false;
+  var box=document.getElementById('fidbox'), wrap=document.getElementById('fid');
+  function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(e){return null;}}
+  function b64(buf){return btoa(String.fromCharCode.apply(null,new Uint8Array(buf)));}
+  function unb64(s){return Uint8Array.from(atob(s),function(c){return c.charCodeAt(0);});}
+  function rnd(n){return crypto.getRandomValues(new Uint8Array(n));}
+  function show(html){box.innerHTML=html;wrap.classList.add('on');}
+  function hide(){wrap.classList.remove('on');box.innerHTML='';}
+  function flash(t){show('<div class="msg">'+t+'</div>');setTimeout(hide,3500);}
+  function send(m){if(inner&&origin){m.am=1;inner.postMessage(m,origin);}}
+  var supported=false;
+  if(window.PublicKeyCredential&&PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable){
+    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function(v){supported=!!v;}).catch(function(){});
+  }
+  async function aesKey(prf){var base=await crypto.subtle.importKey('raw',prf,'HKDF',false,['deriveKey']);
+    return crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:new Uint8Array(0),info:new TextEncoder().encode('am-pin')},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
+  async function prfGet(id,salt){
+    var a=await navigator.credentials.get({publicKey:{challenge:rnd(32),rpId:location.hostname,allowCredentials:[{type:'public-key',id:id}],userVerification:'required',timeout:60000,extensions:{prf:{eval:{first:salt}}}}});
+    var r=a.getClientExtensionResults();if(!r.prf||!r.prf.results||!r.prf.results.first)throw new Error('noprf');return r.prf.results.first;}
+  async function enable(pin){
+    if(busy)return;busy=true;
+    try{
+      var salt=rnd(32);
+      var c=await navigator.credentials.create({publicKey:{rp:{name:APP,id:location.hostname},user:{id:rnd(16),name:APP,displayName:APP},challenge:rnd(32),
+        pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],authenticatorSelection:{authenticatorAttachment:'platform',residentKey:'required',userVerification:'required'},timeout:60000,extensions:{prf:{eval:{first:salt}}}}});
+      var ext=c.getClientExtensionResults(),prf=ext.prf&&ext.prf.results&&ext.prf.results.first;
+      if(!(ext.prf&&ext.prf.enabled)&&!prf){flash(T.noSupport);return;}
+      if(!prf)prf=await prfGet(c.rawId,salt);
+      var key=await aesKey(prf),iv=rnd(12),ct=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,new TextEncoder().encode(pin));
+      ls(K,JSON.stringify({id:b64(c.rawId),salt:b64(salt),iv:b64(iv),ct:b64(ct)}));
+      flash(T.on);
+    }catch(e){flash(e&&e.name==='NotAllowedError'?T.cancel:T.noSupport);}
+    finally{busy=false;pending=null;}
+  }
+  async function unlock(){
+    var s=ls(K);if(!s||busy)return;busy=true;
+    try{var o=JSON.parse(s),prf=await prfGet(unb64(o.id),unb64(o.salt)),key=await aesKey(prf);
+      var pin=new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(o.iv)},key,unb64(o.ct)));
+      hide();send({t:'pin',pin:pin});
+    }catch(e){showUnlock();}
+    finally{busy=false;}
+  }
+  function showUnlock(){show('<button class="pri" id="fidgo">'+FACE+T.unlock+'</button>');document.getElementById('fidgo').onclick=unlock;}
+  function offerSetup(){
+    show('<div class="card"><b>'+T.askTitle+'</b>'+T.askText+'<div class="row"><button class="pri" id="fidyes">'+FACE+T.yes+'</button></div><div class="row"><button class="sec" id="fidno">'+T.no+'</button></div></div>');
+    document.getElementById('fidyes').onclick=function(){var p=pending;hide();if(p)enable(p);};
+    document.getElementById('fidno').onclick=function(){ls(NO,'1');pending=null;hide();};
+  }
+  window.addEventListener('message',function(e){
+    if(!/\.googleusercontent\.com$/.test(e.origin)||!e.data||!e.data.am)return;
+    inner=e.source;origin=e.origin;var t=e.data.t;
+    if(t==='locked'){
+      if(ls(K)){showUnlock();if(!tried){tried=true;unlock();}}
+      else send({t:'hi',setup:supported&&!ls(NO)});
+    }else if(t==='pinok'){
+      if(supported&&!ls(K)&&!ls(NO)&&e.data.pin&&/^\d{6}$/.test(e.data.pin)){pending=e.data.pin;offerSetup();}
+    }else if(t==='unlocked'){if(!pending)hide();}
+    else if(t==='pinfail'){ls(K,null);flash(T.reset);}
+  });
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)tried=false;});
+})();
+</script>
+
 </body>
 </html>
